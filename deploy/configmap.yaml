@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-manager-config
+  labels:
+    app: task-manager
+data:
+  # PostgreSQL connection string using the Helm-deployed service DNS name.
+  # The Bitnami chart creates a service named <release>-postgresql in the
+  # namespace where it is installed (default).
+  DATABASE_URL: "postgres://postgres:taskmanager@postgres-postgresql.default.svc.cluster.local:5432/taskmanager?sslmode=disable"
+  WORKER_CONCURRENCY: "16"
+  SERVER_PORT: "8080"
+  DRAIN_SECONDS: "5"
+  SHUTDOWN_TIMEOUT_SECONDS: "10"
+  WORKER_WAIT_TIMEOUT_SECONDS: "30"
+  REAPER_INTERVAL_SECONDS: "30"

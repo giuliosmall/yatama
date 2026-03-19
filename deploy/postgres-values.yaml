@@ -1,0 +1,16 @@
+# Bitnami PostgreSQL Helm chart value overrides for local development.
+# Credentials here are for local Kind use only -- never use these in production.
+auth:
+  postgresPassword: "taskmanager"
+  database: "taskmanager"
+
+primary:
+  persistence:
+    size: "1Gi"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
