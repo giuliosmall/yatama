@@ -6,7 +6,7 @@ metadata:
     app: task-manager
     component: api
 spec:
-  replicas: 10
+  replicas: 2
   selector:
     matchLabels:
       app: task-manager
@@ -48,11 +48,11 @@ spec:
             failureThreshold: 2
           resources:
             requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
               cpu: "1"
               memory: "512Mi"
-            limits:
-              cpu: "4"
-              memory: "2Gi"
           securityContext:
             runAsNonRoot: true
             readOnlyRootFilesystem: true

@@ -1,10 +1,9 @@
-# Strimzi Kafka cluster for task-manager scaled deployment.
+# Strimzi Kafka cluster for task-manager.
 # Requires the Strimzi operator to be installed first:
 #   kubectl create -f https://strimzi.io/install/latest?namespace=default
 #
-# This creates a 3-broker Kafka cluster with 3 ZooKeeper nodes, internal
-# plaintext listeners, and persistent storage suitable for high-throughput
-# task ingestion.
+# Local (kind): runs with reduced resources.
+# Cloud: increase replicas, CPU, memory, and storage.
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
 metadata:
@@ -15,7 +14,7 @@ metadata:
 spec:
   kafka:
     version: 3.7.0
-    replicas: 5
+    replicas: 3
     listeners:
       - name: plain
         port: 9092
@@ -30,58 +29,38 @@ spec:
       transaction.state.log.min.isr: 2
       log.retention.ms: 604800000
       unclean.leader.election.enable: false
-      # High-throughput tuning.
-      num.network.threads: 8
-      num.io.threads: 16
+      # Throughput tuning.
+      num.network.threads: 4
+      num.io.threads: 8
       socket.send.buffer.bytes: 1048576
       socket.receive.buffer.bytes: 1048576
-      socket.request.max.bytes: 104857600
       log.flush.interval.messages: 50000
       log.flush.interval.ms: 1000
-      num.replica.fetchers: 4
-      replica.fetch.max.bytes: 10485760
+      num.replica.fetchers: 2
     storage:
       type: persistent-claim
-      size: 100Gi
+      size: 10Gi
       deleteClaim: false
     resources:
       requests:
-        cpu: "4"
-        memory: "8Gi"
+        cpu: "500m"
+        memory: "1Gi"
       limits:
-        cpu: "8"
-        memory: "16Gi"
-    config:
-      num.partitions: 128
-      default.replication.factor: 3
-      min.insync.replicas: 2
-      offsets.topic.replication.factor: 3
-      transaction.state.log.replication.factor: 3
-      transaction.state.log.min.isr: 2
-      log.retention.ms: 604800000
-      unclean.leader.election.enable: false
-      num.network.threads: 8
-      num.io.threads: 16
-      socket.send.buffer.bytes: 1048576
-      socket.receive.buffer.bytes: 1048576
-      socket.request.max.bytes: 104857600
-      log.flush.interval.messages: 50000
-      log.flush.interval.ms: 1000
-      num.replica.fetchers: 4
-      replica.fetch.max.bytes: 10485760
+        cpu: "2"
+        memory: "4Gi"
   zookeeper:
     replicas: 3
     storage:
       type: persistent-claim
-      size: 20Gi
+      size: 5Gi
       deleteClaim: false
     resources:
       requests:
-        cpu: "1"
-        memory: "2Gi"
+        cpu: "250m"
+        memory: "512Mi"
       limits:
-        cpu: "2"
-        memory: "4Gi"
+        cpu: "1"
+        memory: "1Gi"
   entityOperator:
     topicOperator: {}
     userOperator: {}

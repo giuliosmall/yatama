@@ -15,8 +15,8 @@ metadata:
 spec:
   scaleTargetRef:
     name: task-manager-worker
-  minReplicaCount: 20
-  maxReplicaCount: 500
+  minReplicaCount: 2
+  maxReplicaCount: 20
   # Cooldown period (seconds) before scaling down after lag drops.
   cooldownPeriod: 300
   # How often KEDA checks the trigger (seconds).
