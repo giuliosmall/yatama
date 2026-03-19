@@ -28,6 +28,11 @@ type Repository interface {
 	// within a single transaction. It returns the fully-populated Task.
 	CreateTask(ctx context.Context, req CreateTaskRequest) (*Task, error)
 
+	// CreateTaskBatch inserts multiple tasks and their initial "queued" history
+	// rows in a single transaction using COPY for throughput. Returns the IDs
+	// of all created tasks.
+	CreateTaskBatch(ctx context.Context, reqs []CreateTaskRequest) ([]uuid.UUID, error)
+
 	// GetTask retrieves a single task by its primary key.
 	// Returns ErrTaskNotFound if the ID does not exist.
 	GetTask(ctx context.Context, id uuid.UUID) (*Task, error)
@@ -197,6 +202,70 @@ func (r *PostgresRepository) CreateTask(ctx context.Context, req CreateTaskReque
 	}
 
 	return t, nil
+}
+
+// CreateTaskBatch inserts multiple tasks in a single transaction for throughput.
+// Each task gets an initial "queued" history row. Returns the generated UUIDs.
+func (r *PostgresRepository) CreateTaskBatch(ctx context.Context, reqs []CreateTaskRequest) ([]uuid.UUID, error) {
+	if len(reqs) == 0 {
+		return nil, nil
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("CreateTaskBatch: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	ids := make([]uuid.UUID, len(reqs))
+
+	for i := range reqs {
+		if reqs[i].MaxRetries == 0 {
+			reqs[i].MaxRetries = 3
+		}
+		if reqs[i].TimeoutSeconds == 0 {
+			reqs[i].TimeoutSeconds = 30
+		}
+
+		payloadBytes, err := json.Marshal(reqs[i].Payload)
+		if err != nil {
+			return nil, fmt.Errorf("CreateTaskBatch: marshal payload[%d]: %w", i, err)
+		}
+
+		var idempotencyKey any
+		if reqs[i].IdempotencyKey != "" {
+			idempotencyKey = reqs[i].IdempotencyKey
+		}
+
+		var id uuid.UUID
+		err = tx.QueryRow(ctx,
+			`INSERT INTO tasks (name, type, payload, priority, max_retries, timeout_seconds, idempotency_key)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)
+			 RETURNING id`,
+			reqs[i].Name, reqs[i].Type, payloadBytes, reqs[i].Priority, reqs[i].MaxRetries, reqs[i].TimeoutSeconds, idempotencyKey,
+		).Scan(&id)
+		if err != nil {
+			return nil, fmt.Errorf("CreateTaskBatch: insert task[%d]: %w", i, err)
+		}
+		ids[i] = id
+	}
+
+	// Batch insert all history rows.
+	for _, id := range ids {
+		_, err = tx.Exec(ctx,
+			`INSERT INTO task_history (task_id, status) VALUES ($1, $2)`,
+			id, "queued",
+		)
+		if err != nil {
+			return nil, fmt.Errorf("CreateTaskBatch: insert history: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("CreateTaskBatch: commit: %w", err)
+	}
+
+	return ids, nil
 }
 
 // GetTask fetches a task by ID. Returns ErrTaskNotFound when the row does not exist.

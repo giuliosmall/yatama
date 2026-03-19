@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/giulio/task-manager/pkg/email"
+	"github.com/giulio/task-manager/pkg/noop"
 	"github.com/giulio/task-manager/pkg/query"
 )
 
@@ -29,6 +30,7 @@ func NewRegistry() *Registry {
 	}
 	r.funcs["send_email"] = email.SendEmail
 	r.funcs["run_query"] = query.RunQuery
+	r.funcs["noop"] = noop.Noop
 	return r
 }
 

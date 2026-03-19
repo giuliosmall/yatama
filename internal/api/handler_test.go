@@ -43,6 +43,14 @@ func newMockRepository() *mockRepository {
 	}
 }
 
+func (m *mockRepository) CreateTaskBatch(_ context.Context, reqs []task.CreateTaskRequest) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, len(reqs))
+	for i := range reqs {
+		ids[i] = uuid.New()
+	}
+	return ids, nil
+}
+
 func (m *mockRepository) CreateTask(_ context.Context, req task.CreateTaskRequest) (*task.Task, error) {
 	if m.createErr != nil {
 		return nil, m.createErr

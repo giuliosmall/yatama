@@ -21,6 +21,7 @@ func NewRouter(h *Handler) chi.Router {
 
 	// Task endpoints.
 	r.Post("/tasks", h.CreateTask)
+	r.Post("/tasks/batch", h.CreateTaskBatch)
 	r.Get("/tasks/{id}", h.GetTask)
 	r.Get("/tasks/{id}/history", h.GetTaskHistory)
 

@@ -179,6 +179,9 @@ func (m *mockRepo) RetryDLQTask(_ context.Context, _ uuid.UUID) (*task.Task, err
 func (m *mockRepo) ReapStaleTasks(_ context.Context) (int, int, error) {
 	panic("not implemented")
 }
+func (m *mockRepo) CreateTaskBatch(_ context.Context, _ []task.CreateTaskRequest) ([]uuid.UUID, error) {
+	panic("not implemented")
+}
 
 func TestPostgresConsumer_Consume_ReturnsChannel(t *testing.T) {
 	t.Parallel()

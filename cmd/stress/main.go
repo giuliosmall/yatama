@@ -64,8 +64,9 @@ func main() {
 
 	flag.Parse()
 
-	if *taskType != "send_email" && *taskType != "run_query" && *taskType != "mixed" {
-		fmt.Fprintf(os.Stderr, "invalid -type %q: must be send_email, run_query, or mixed\n", *taskType)
+	validTypes := map[string]bool{"send_email": true, "run_query": true, "mixed": true, "noop": true}
+	if !validTypes[*taskType] {
+		fmt.Fprintf(os.Stderr, "invalid -type %q: must be send_email, run_query, mixed, or noop\n", *taskType)
 		os.Exit(1)
 	}
 
@@ -330,6 +331,8 @@ func createTask(ctx context.Context, client *http.Client, baseURL string, idx in
 		payload["payload"] = map[string]string{
 			"query": fmt.Sprintf("SELECT %d", idx),
 		}
+	case "noop":
+		payload["payload"] = map[string]string{}
 	}
 
 	body, _ := json.Marshal(payload)

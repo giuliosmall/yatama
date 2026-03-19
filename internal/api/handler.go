@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -185,6 +186,77 @@ func (h *Handler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	tasksCreatedTotal.WithLabelValues(req.Type).Inc()
 
 	writeJSON(w, http.StatusCreated, map[string]string{"id": t.ID.String()})
+}
+
+// CreateTaskBatch handles POST /tasks/batch. It creates multiple tasks in a
+// single transaction for higher throughput. Accepts a JSON array of task
+// requests and returns an array of created IDs.
+func (h *Handler) CreateTaskBatch(w http.ResponseWriter, r *http.Request) {
+	var reqs []task.CreateTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
+		writeAPIError(w, ErrInvalidJSONBody)
+		return
+	}
+
+	if len(reqs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "EMPTY_BATCH", "message": "batch must not be empty"})
+		return
+	}
+	if len(reqs) > 1000 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "BATCH_TOO_LARGE", "message": "batch size must not exceed 1000"})
+		return
+	}
+
+	// Validate each request.
+	for i, req := range reqs {
+		if req.Name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "NAME_REQUIRED", "message": fmt.Sprintf("task[%d]: name is required", i)})
+			return
+		}
+		if req.Type == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "TYPE_REQUIRED", "message": fmt.Sprintf("task[%d]: type is required", i)})
+			return
+		}
+		if _, ok := h.registry.Get(req.Type); !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "UNKNOWN_TASK_TYPE", "message": fmt.Sprintf("task[%d]: unknown task type %q", i, req.Type)})
+			return
+		}
+		if req.Payload == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "PAYLOAD_NULL", "message": fmt.Sprintf("task[%d]: payload must not be null", i)})
+			return
+		}
+	}
+
+	ids, err := h.repo.CreateTaskBatch(r.Context(), reqs)
+	if err != nil {
+		slog.Error("failed to create task batch", "error", err, "count", len(reqs))
+		writeAPIError(w, ErrInternal)
+		return
+	}
+
+	// Enqueue each task to the queue backend.
+	for i, id := range ids {
+		if err := h.producer.Enqueue(r.Context(), queue.Message{
+			TaskID:         id,
+			Name:           reqs[i].Name,
+			Type:           reqs[i].Type,
+			Payload:        reqs[i].Payload,
+			Priority:       reqs[i].Priority,
+			MaxRetries:     reqs[i].MaxRetries,
+			TimeoutSeconds: reqs[i].TimeoutSeconds,
+			IdempotencyKey: reqs[i].IdempotencyKey,
+		}); err != nil {
+			slog.Error("failed to enqueue task from batch", "error", err, "task_id", id)
+		}
+	}
+
+	tasksCreatedTotal.WithLabelValues("batch").Add(float64(len(ids)))
+
+	idStrings := make([]string, len(ids))
+	for i, id := range ids {
+		idStrings[i] = id.String()
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"ids": idStrings, "count": len(ids)})
 }
 
 // GetTask handles GET /tasks/{id}. It returns the task as JSON, or 404 if the
