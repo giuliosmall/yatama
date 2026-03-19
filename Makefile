@@ -127,7 +127,7 @@ deploy-worker:
 	kind load docker-image $(WORKER_IMAGE):$(IMAGE_TAG) --name $(CLUSTER_NAME)
 	kubectl apply -f $(DEPLOY_DIR)/configmap-worker.yaml
 	kubectl apply -f $(DEPLOY_DIR)/worker-deployment.yaml
-	kubectl apply -f $(DEPLOY_DIR)/worker-hpa.yaml
+	kubectl apply -f $(DEPLOY_DIR)/worker-hpa.yaml 2>/dev/null || echo "KEDA not installed — skipping worker HPA (install KEDA for Kafka-lag autoscaling)"
 	kubectl rollout status deployment/task-manager-worker --timeout=120s
 
 deploy-all-scaled: kind-up deploy-pg wait-pg migrate deploy-kafka deploy-pgbouncer deploy-api deploy-worker deploy-prometheus deploy-grafana
