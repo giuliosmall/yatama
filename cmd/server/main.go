@@ -69,7 +69,7 @@ func main() {
 	repo := task.NewPostgresRepository(pool)
 	registry := task.NewRegistry()
 	producer := queue.NewPostgresProducer()
-	consumer := queue.NewPostgresConsumer(repo, 1*time.Second)
+	consumer := queue.NewPostgresConsumer(repo, 50*time.Millisecond, concurrency)
 	drain := api.NewDrainState()
 	handler := api.NewHandler(repo, registry, producer, drain)
 	router := api.NewRouter(handler)

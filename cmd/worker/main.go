@@ -87,7 +87,7 @@ func main() {
 			"group_id", kafkaGroupID,
 		)
 	} else {
-		consumer = queue.NewPostgresConsumer(repo, 1*time.Second)
+		consumer = queue.NewPostgresConsumer(repo, 50*time.Millisecond, concurrency)
 	}
 	defer consumer.Close()
 

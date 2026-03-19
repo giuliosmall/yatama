@@ -187,7 +187,7 @@ func TestPostgresConsumer_Consume_ReturnsChannel(t *testing.T) {
 	t.Parallel()
 
 	repo := &mockRepo{}
-	c := NewPostgresConsumer(repo, 50*time.Millisecond)
+	c := NewPostgresConsumer(repo, 50*time.Millisecond, 1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -213,7 +213,7 @@ func TestPostgresConsumer_Consume_ContextCancellationClosesChannel(t *testing.T)
 			return nil, nil
 		},
 	}
-	c := NewPostgresConsumer(repo, 10*time.Millisecond)
+	c := NewPostgresConsumer(repo, 10*time.Millisecond, 1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ch, err := c.Consume(ctx)
@@ -240,9 +240,12 @@ func TestPostgresConsumer_DefaultPollInterval(t *testing.T) {
 	t.Parallel()
 
 	repo := &mockRepo{}
-	c := NewPostgresConsumer(repo, 0) // 0 should default to 1s
-	if c.pollInterval != 1*time.Second {
-		t.Errorf("pollInterval: got %v, want 1s", c.pollInterval)
+	c := NewPostgresConsumer(repo, 0, 0) // 0s default to 50ms, 0 pollers default to 16
+	if c.pollInterval != 50*time.Millisecond {
+		t.Errorf("pollInterval: got %v, want 50ms", c.pollInterval)
+	}
+	if c.pollers != 16 {
+		t.Errorf("pollers: got %d, want 16", c.pollers)
 	}
 }
 
