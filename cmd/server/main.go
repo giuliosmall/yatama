@@ -47,7 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 	poolConfig.MaxConns = int32(maxConns)
-	poolConfig.MinConns = int32(maxConns / 4)
+	poolConfig.MinConns = int32(maxConns)
 	poolConfig.MaxConnLifetime = 30 * time.Minute
 	poolConfig.MaxConnIdleTime = 5 * time.Minute
 	poolConfig.HealthCheckPeriod = 30 * time.Second

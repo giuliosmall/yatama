@@ -47,7 +47,18 @@ func main() {
 	}
 	defer tracerShutdown(context.Background())
 
-	pool, err := pgxpool.New(ctx, databaseURL)
+	maxConns := atoi(envOrDefault("PG_MAX_CONNS", "50"))
+	poolConfig, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		slog.Error("failed to parse database URL", "error", err)
+		os.Exit(1)
+	}
+	poolConfig.MaxConns = int32(maxConns)
+	poolConfig.MinConns = int32(maxConns)
+	poolConfig.MaxConnLifetime = 30 * time.Minute
+	poolConfig.MaxConnIdleTime = 5 * time.Minute
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
@@ -58,7 +69,7 @@ func main() {
 		slog.Error("failed to ping database", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("connected to database")
+	slog.Info("connected to database", "max_conns", maxConns)
 
 	repo := task.NewPostgresRepository(pool)
 	registry := task.NewRegistry()
