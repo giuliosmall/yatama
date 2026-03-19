@@ -1,0 +1,61 @@
+# KafkaTopic custom resources managed by Strimzi's Entity Operator.
+# These are created automatically once the Kafka cluster is ready.
+---
+# Main task ingestion topic. 128 partitions allow up to 128 worker pods to
+# consume in parallel without partition starvation.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: tasks
+  labels:
+    strimzi.io/cluster: task-manager-kafka
+    app: task-manager
+    component: kafka
+spec:
+  partitions: 128
+  replicas: 3
+  config:
+    # 7-day retention.
+    retention.ms: "604800000"
+    # 1 MB max message size -- tasks should be lightweight; large payloads
+    # belong in object storage with a reference in the message.
+    max.message.bytes: "1048576"
+    # Compaction disabled -- tasks are append-only events.
+    cleanup.policy: delete
+---
+# Dead-letter queue for tasks that fail all retry attempts. Lower partition
+# count is fine since DLQ throughput is a small fraction of the main topic.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: tasks-dlq
+  labels:
+    strimzi.io/cluster: task-manager-kafka
+    app: task-manager
+    component: kafka
+spec:
+  partitions: 16
+  replicas: 3
+  config:
+    # Retain DLQ messages indefinitely for investigation.
+    retention.ms: "-1"
+    cleanup.policy: delete
+---
+# Task history topic for audit/analytics. Shorter retention since this data
+# is expected to be consumed by a downstream pipeline (e.g., into a data
+# warehouse) within hours.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: task-history
+  labels:
+    strimzi.io/cluster: task-manager-kafka
+    app: task-manager
+    component: kafka
+spec:
+  partitions: 32
+  replicas: 3
+  config:
+    # 1-day retention -- downstream consumers must keep up.
+    retention.ms: "86400000"
+    cleanup.policy: delete

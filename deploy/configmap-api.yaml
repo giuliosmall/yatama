@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-manager-api-config
+  labels:
+    app: task-manager
+    component: api
+data:
+  # Database connection goes through PgBouncer (port 6432) for connection
+  # pooling. PgBouncer forwards to the Bitnami PostgreSQL Helm release.
+  DATABASE_URL: "postgres://postgres:taskmanager@pgbouncer.default.svc.cluster.local:6432/taskmanager?sslmode=disable"
+  SERVER_PORT: "8080"
+  # Kafka bootstrap servers -- Strimzi creates a headless service at
+  # <cluster>-kafka-bootstrap.<namespace>.svc.cluster.local.
+  KAFKA_BROKERS: "task-manager-kafka-kafka-bootstrap.default.svc.cluster.local:9092"
+  KAFKA_TOPIC: "tasks"
+  KAFKA_DLQ_TOPIC: "tasks-dlq"

@@ -1,0 +1,145 @@
+# PgBouncer deployment and service for connection pooling.
+# Transaction-mode pooling allows many application pods to share a small
+# number of PostgreSQL connections, which is critical at scale since each
+# worker pod runs 64 concurrent goroutines.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+  labels:
+    app: task-manager
+    component: pgbouncer
+data:
+  pgbouncer.ini: |
+    [databases]
+    ; Forward all connections to the Bitnami PostgreSQL Helm release.
+    taskmanager = host=postgres-postgresql.default.svc.cluster.local port=5432 dbname=taskmanager
+
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 6432
+    auth_type = md5
+    auth_file = /etc/pgbouncer/userlist.txt
+
+    ; Transaction pooling releases the server connection back to the pool at
+    ; the end of each transaction, maximizing connection reuse.
+    pool_mode = transaction
+
+    ; Pool sizing: 100 server connections per PgBouncer instance.
+    ; With a single PgBouncer pod this gives 100 connections to PostgreSQL
+    ; while accepting up to 2000 client connections from all API + worker pods.
+    default_pool_size = 100
+    max_client_conn = 2000
+    reserve_pool_size = 25
+
+    ; Timeouts.
+    server_idle_timeout = 300
+    client_idle_timeout = 0
+    server_connect_timeout = 15
+
+    ; Logging.
+    log_connections = 0
+    log_disconnections = 0
+    log_pooler_errors = 1
+
+    ; Admin access for monitoring.
+    admin_users = postgres
+    stats_users = postgres
+
+  # userlist.txt maps PostgreSQL users to their md5 password hashes.
+  # The hash format is: "username" "md5<md5(password+username)>"
+  # For user=postgres, password=taskmanager:
+  #   md5(taskmanagerpostgres) = md5... computed below.
+  userlist.txt: |
+    "postgres" "md58b1b07e1ed428b89e38b6eec956801d9"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgbouncer
+  labels:
+    app: task-manager
+    component: pgbouncer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: task-manager
+      component: pgbouncer
+  template:
+    metadata:
+      labels:
+        app: task-manager
+        component: pgbouncer
+    spec:
+      containers:
+        - name: pgbouncer
+          image: bitnami/pgbouncer:latest
+          ports:
+            - name: pgbouncer
+              containerPort: 6432
+              protocol: TCP
+          env:
+            # Bitnami PgBouncer image configuration.
+            - name: PGBOUNCER_DATABASE
+              value: "taskmanager"
+            - name: PGBOUNCER_PORT
+              value: "6432"
+            - name: PGBOUNCER_POOL_MODE
+              value: "transaction"
+            - name: PGBOUNCER_DEFAULT_POOL_SIZE
+              value: "100"
+            - name: PGBOUNCER_MAX_CLIENT_CONN
+              value: "2000"
+            - name: PGBOUNCER_RESERVE_POOL_SIZE
+              value: "25"
+            - name: POSTGRESQL_HOST
+              value: "postgres-postgresql.default.svc.cluster.local"
+            - name: POSTGRESQL_PORT
+              value: "5432"
+            - name: POSTGRESQL_USERNAME
+              value: "postgres"
+            - name: POSTGRESQL_PASSWORD
+              value: "taskmanager"
+            - name: POSTGRESQL_DATABASE
+              value: "taskmanager"
+          livenessProbe:
+            tcpSocket:
+              port: 6432
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 6432
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgbouncer
+  labels:
+    app: task-manager
+    component: pgbouncer
+spec:
+  type: ClusterIP
+  selector:
+    app: task-manager
+    component: pgbouncer
+  ports:
+    - name: pgbouncer
+      port: 6432
+      targetPort: 6432
+      protocol: TCP

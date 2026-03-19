@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-manager-api
+  labels:
+    app: task-manager
+    component: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: task-manager
+      component: api
+  template:
+    metadata:
+      labels:
+        app: task-manager
+        component: api
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: task-manager-api:latest
+          # Image is loaded into Kind directly -- never pull from a registry.
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: task-manager-api-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534

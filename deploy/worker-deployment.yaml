@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-manager-worker
+  labels:
+    app: task-manager
+    component: worker
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: task-manager
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: task-manager
+        component: worker
+      # Prometheus annotations for automatic scraping of worker metrics.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Workers need time to finish in-flight tasks before shutdown.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: task-manager-worker:latest
+          # Image is loaded into Kind directly -- never pull from a registry.
+          imagePullPolicy: Never
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: task-manager-worker-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # No readiness probe -- workers do not receive inbound traffic.
+          # The liveness probe is sufficient to detect stuck processes.
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534

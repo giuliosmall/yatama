@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-manager-worker-config
+  labels:
+    app: task-manager
+    component: worker
+data:
+  # Database connection goes through PgBouncer (port 6432) for connection
+  # pooling. PgBouncer forwards to the Bitnami PostgreSQL Helm release.
+  DATABASE_URL: "postgres://postgres:taskmanager@pgbouncer.default.svc.cluster.local:6432/taskmanager?sslmode=disable"
+  # Each worker pod runs 64 concurrent goroutines consuming from Kafka.
+  WORKER_CONCURRENCY: "64"
+  # Reaper checks for stuck/expired tasks every 30 seconds.
+  REAPER_INTERVAL_SECONDS: "30"
+  # Prometheus metrics endpoint port.
+  METRICS_PORT: "9090"
+  # Kafka settings.
+  KAFKA_BROKERS: "task-manager-kafka-kafka-bootstrap.default.svc.cluster.local:9092"
+  KAFKA_TOPIC: "tasks"
+  KAFKA_GROUP_ID: "task-workers"
+  # How long the worker waits for new messages before polling again.
+  WORKER_WAIT_TIMEOUT_SECONDS: "30"

@@ -1,0 +1,39 @@
+# HorizontalPodAutoscaler for the API deployment.
+# Scales based on CPU utilization -- API pods are CPU-bound on JSON
+# serialization and Kafka produce calls.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: task-manager-api
+  labels:
+    app: task-manager
+    component: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: task-manager-api
+  minReplicas: 3
+  maxReplicas: 50
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    # Scale up aggressively to handle traffic spikes.
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    # Scale down conservatively to avoid flapping.
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60

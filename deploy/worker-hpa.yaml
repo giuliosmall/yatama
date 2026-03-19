@@ -1,0 +1,52 @@
+# KEDA ScaledObject for Kafka-lag-based autoscaling of workers.
+# Requires KEDA to be installed in the cluster:
+#   helm install keda kedacore/keda --namespace keda --create-namespace
+#
+# KEDA watches the Kafka consumer group lag on the tasks topic and scales
+# worker pods proportionally. This is far more responsive than CPU-based
+# HPA for queue-drain workloads.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: task-manager-worker
+  labels:
+    app: task-manager
+    component: worker
+spec:
+  scaleTargetRef:
+    name: task-manager-worker
+  minReplicaCount: 5
+  maxReplicaCount: 200
+  # Cooldown period (seconds) before scaling down after lag drops.
+  cooldownPeriod: 300
+  # How often KEDA checks the trigger (seconds).
+  pollingInterval: 15
+  triggers:
+    - type: kafka
+      metadata:
+        # Strimzi bootstrap service.
+        bootstrapServers: task-manager-kafka-kafka-bootstrap.default.svc.cluster.local:9092
+        consumerGroup: task-workers
+        topic: tasks
+        # Scale up when per-partition lag exceeds this threshold.
+        lagThreshold: "1000"
+        # Offset reset policy for the KEDA consumer group query.
+        offsetResetPolicy: latest
+  advanced:
+    # Preserve the Deployment's own replica count as the starting point
+    # when KEDA first takes over.
+    restoreToOriginalReplicaCount: true
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 15
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 30
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
