@@ -10,7 +10,7 @@ data:
   # pooling. PgBouncer forwards to the Bitnami PostgreSQL Helm release.
   DATABASE_URL: "postgres://postgres:taskmanager@pgbouncer.default.svc.cluster.local:6432/taskmanager?sslmode=disable"
   # Each worker pod runs 64 concurrent goroutines consuming from Kafka.
-  WORKER_CONCURRENCY: "64"
+  WORKER_CONCURRENCY: "256"
   # Reaper checks for stuck/expired tasks every 30 seconds.
   REAPER_INTERVAL_SECONDS: "30"
   # Prometheus metrics endpoint port.
@@ -21,3 +21,5 @@ data:
   KAFKA_GROUP_ID: "task-workers"
   # How long the worker waits for new messages before polling again.
   WORKER_WAIT_TIMEOUT_SECONDS: "30"
+  PG_MAX_CONNS: "50"
+  HISTORY_MODE: "buffered"

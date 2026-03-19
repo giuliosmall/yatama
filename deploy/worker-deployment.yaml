@@ -6,7 +6,7 @@ metadata:
     app: task-manager
     component: worker
 spec:
-  replicas: 5
+  replicas: 20
   selector:
     matchLabels:
       app: task-manager
@@ -48,11 +48,11 @@ spec:
           # The liveness probe is sufficient to detect stuck processes.
           resources:
             requests:
-              cpu: "200m"
-              memory: "256Mi"
-            limits:
-              cpu: "1000m"
+              cpu: "2"
               memory: "1Gi"
+            limits:
+              cpu: "4"
+              memory: "4Gi"
           securityContext:
             runAsNonRoot: true
             readOnlyRootFilesystem: true

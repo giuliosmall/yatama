@@ -29,9 +29,9 @@ data:
     ; Pool sizing: 100 server connections per PgBouncer instance.
     ; With a single PgBouncer pod this gives 100 connections to PostgreSQL
     ; while accepting up to 2000 client connections from all API + worker pods.
-    default_pool_size = 100
-    max_client_conn = 2000
-    reserve_pool_size = 25
+    default_pool_size = 200
+    max_client_conn = 10000
+    reserve_pool_size = 50
 
     ; Timeouts.
     server_idle_timeout = 300
@@ -89,11 +89,11 @@ spec:
             - name: PGBOUNCER_POOL_MODE
               value: "transaction"
             - name: PGBOUNCER_DEFAULT_POOL_SIZE
-              value: "100"
+              value: "200"
             - name: PGBOUNCER_MAX_CLIENT_CONN
-              value: "2000"
+              value: "10000"
             - name: PGBOUNCER_RESERVE_POOL_SIZE
-              value: "25"
+              value: "50"
             - name: POSTGRESQL_HOST
               value: "postgres-postgresql.default.svc.cluster.local"
             - name: POSTGRESQL_PORT
@@ -120,11 +120,11 @@ spec:
             failureThreshold: 2
           resources:
             requests:
-              cpu: "100m"
-              memory: "128Mi"
+              cpu: "1"
+              memory: "512Mi"
             limits:
-              cpu: "500m"
-              memory: "256Mi"
+              cpu: "2"
+              memory: "1Gi"
 ---
 apiVersion: v1
 kind: Service

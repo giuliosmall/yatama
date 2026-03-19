@@ -13,8 +13,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: task-manager-api
-  minReplicas: 3
-  maxReplicas: 50
+  minReplicas: 10
+  maxReplicas: 100
   metrics:
     - type: Resource
       resource:

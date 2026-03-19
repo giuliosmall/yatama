@@ -6,11 +6,27 @@ auth:
 
 primary:
   persistence:
-    size: "1Gi"
+    size: "50Gi"
   resources:
     requests:
-      cpu: "100m"
-      memory: "128Mi"
+      cpu: "4"
+      memory: "8Gi"
     limits:
-      cpu: "500m"
-      memory: "512Mi"
+      cpu: "8"
+      memory: "16Gi"
+  # Tuned for high-throughput task queue workload.
+  extendedConfiguration: |
+    max_connections = 300
+    shared_buffers = 4GB
+    effective_cache_size = 12GB
+    work_mem = 16MB
+    maintenance_work_mem = 512MB
+    wal_buffers = 64MB
+    max_wal_size = 4GB
+    checkpoint_completion_target = 0.9
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    min_wal_size = 1GB
+    synchronous_commit = off
+    commit_delay = 100
+    commit_siblings = 5

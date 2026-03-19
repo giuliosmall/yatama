@@ -15,3 +15,4 @@ data:
   KAFKA_BROKERS: "task-manager-kafka-kafka-bootstrap.default.svc.cluster.local:9092"
   KAFKA_TOPIC: "tasks"
   KAFKA_DLQ_TOPIC: "tasks-dlq"
+  PG_MAX_CONNS: "50"
