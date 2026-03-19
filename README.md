@@ -1,4 +1,4 @@
-# Task Manager
+# Yet Another Task Manager (YaTaMa)
 
 A background task management system built in Go with PostgreSQL as a durable queue backend. Tasks are enqueued via a REST API, claimed by a built-in worker pool using `SELECT FOR UPDATE SKIP LOCKED`, executed with per-task timeouts, and retried on failure. Supports an optional scaled deployment mode with Kafka as the task transport and independently scalable API and worker pods.
 
