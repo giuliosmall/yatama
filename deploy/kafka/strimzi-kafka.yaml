@@ -1,9 +1,31 @@
-# Strimzi Kafka cluster for task-manager.
-# Requires the Strimzi operator to be installed first:
-#   kubectl create -f https://strimzi.io/install/latest?namespace=default
+# Strimzi Kafka cluster using KRaft mode (no ZooKeeper).
+# Requires Strimzi operator >= 0.46.0.
 #
-# Local (kind): runs with reduced resources.
-# Cloud: increase replicas, CPU, memory, and storage.
+# This uses KafkaNodePool resources for broker configuration as required
+# by modern Strimzi versions.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: combined
+  labels:
+    strimzi.io/cluster: task-manager-kafka
+spec:
+  replicas: 3
+  roles:
+    - controller
+    - broker
+  storage:
+    type: persistent-claim
+    size: 10Gi
+    deleteClaim: false
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
 metadata:
@@ -11,10 +33,12 @@ metadata:
   labels:
     app: task-manager
     component: kafka
+  annotations:
+    strimzi.io/kraft: "enabled"
+    strimzi.io/node-pools: "enabled"
 spec:
   kafka:
-    version: 3.7.0
-    replicas: 3
+    version: 4.2.0
     listeners:
       - name: plain
         port: 9092
@@ -28,7 +52,6 @@ spec:
       transaction.state.log.replication.factor: 3
       transaction.state.log.min.isr: 2
       log.retention.ms: 604800000
-      unclean.leader.election.enable: false
       # Throughput tuning.
       num.network.threads: 4
       num.io.threads: 8
@@ -37,30 +60,6 @@ spec:
       log.flush.interval.messages: 50000
       log.flush.interval.ms: 1000
       num.replica.fetchers: 2
-    storage:
-      type: persistent-claim
-      size: 10Gi
-      deleteClaim: false
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "4Gi"
-  zookeeper:
-    replicas: 3
-    storage:
-      type: persistent-claim
-      size: 5Gi
-      deleteClaim: false
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "512Mi"
-      limits:
-        cpu: "1"
-        memory: "1Gi"
   entityOperator:
     topicOperator: {}
     userOperator: {}

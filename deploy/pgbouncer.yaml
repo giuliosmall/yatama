@@ -75,45 +75,34 @@ spec:
     spec:
       containers:
         - name: pgbouncer
-          image: bitnami/pgbouncer:latest
+          image: edoburu/pgbouncer:latest
           ports:
             - name: pgbouncer
-              containerPort: 6432
+              containerPort: 5432
               protocol: TCP
           env:
-            # Bitnami PgBouncer image configuration.
-            - name: PGBOUNCER_DATABASE
-              value: "taskmanager"
-            - name: PGBOUNCER_PORT
-              value: "6432"
-            - name: PGBOUNCER_POOL_MODE
+            - name: DATABASE_URL
+              value: "postgres://postgres:taskmanager@postgres-postgresql.default.svc.cluster.local:5432/taskmanager"
+            - name: POOL_MODE
               value: "transaction"
-            - name: PGBOUNCER_DEFAULT_POOL_SIZE
+            - name: DEFAULT_POOL_SIZE
               value: "200"
-            - name: PGBOUNCER_MAX_CLIENT_CONN
+            - name: MAX_CLIENT_CONN
               value: "10000"
-            - name: PGBOUNCER_RESERVE_POOL_SIZE
+            - name: RESERVE_POOL_SIZE
               value: "50"
-            - name: POSTGRESQL_HOST
-              value: "postgres-postgresql.default.svc.cluster.local"
-            - name: POSTGRESQL_PORT
-              value: "5432"
-            - name: POSTGRESQL_USERNAME
-              value: "postgres"
-            - name: POSTGRESQL_PASSWORD
-              value: "taskmanager"
-            - name: POSTGRESQL_DATABASE
-              value: "taskmanager"
+            - name: AUTH_TYPE
+              value: "plain"
           livenessProbe:
             tcpSocket:
-              port: 6432
+              port: 5432
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
             tcpSocket:
-              port: 6432
+              port: 5432
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 2
@@ -141,5 +130,5 @@ spec:
   ports:
     - name: pgbouncer
       port: 6432
-      targetPort: 6432
+      targetPort: 5432
       protocol: TCP
