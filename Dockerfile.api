@@ -1,0 +1,31 @@
+# --- Stage 1: Build the Go binary -------------------------------------------
+FROM golang:1.24-alpine AS builder
+
+LABEL maintainer="giulio <giulio@task-manager>"
+LABEL description="API server for the task-manager system"
+
+WORKDIR /build
+
+# Copy dependency manifests first so that `go mod download` is cached
+# independently of source code changes.
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the full source tree and compile a statically-linked binary.
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags="-s -w" -o /app ./cmd/api
+
+# --- Stage 2: Minimal runtime image ----------------------------------------
+FROM alpine:3.20
+
+# Create a non-root user to run the binary.
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+COPY --from=builder /app /app
+
+EXPOSE 8080
+
+USER appuser
+
+ENTRYPOINT ["/app"]
