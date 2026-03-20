@@ -15,6 +15,7 @@ import (
 
 	"github.com/giulio/task-manager/internal/api"
 	"github.com/giulio/task-manager/internal/observability"
+	"github.com/giulio/task-manager/internal/outbox"
 	"github.com/giulio/task-manager/internal/queue"
 	"github.com/giulio/task-manager/internal/task"
 )
@@ -89,6 +90,11 @@ func main() {
 		producer = queue.NewPostgresProducer()
 	}
 	defer producer.Close()
+
+	// Outbox publisher — polls PG outbox table and produces to Kafka.
+	outboxPub := outbox.NewPublisher(pool, producer, outbox.Config{})
+	outboxPub.Start(ctx)
+	defer outboxPub.Close()
 
 	drain := api.NewDrainState()
 	handler := api.NewHandler(repo, registry, producer, drain)

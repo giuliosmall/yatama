@@ -65,6 +65,8 @@ migrate:
 		-- env PGPASSWORD=taskmanager psql -U postgres -d taskmanager < migrations/004_add_reaper_and_idempotency.up.sql
 	kubectl exec -i $$(kubectl get pod -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].metadata.name}') \
 		-- env PGPASSWORD=taskmanager psql -U postgres -d taskmanager < migrations/005_optimize_for_scale.up.sql
+	kubectl exec -i $$(kubectl get pod -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].metadata.name}') \
+		-- env PGPASSWORD=taskmanager psql -U postgres -d taskmanager < migrations/006_create_outbox.up.sql
 
 deploy-app:
 	kubectl apply -f $(DEPLOY_DIR)/configmap.yaml
@@ -119,6 +121,7 @@ deploy-api:
 	kubectl apply -f $(DEPLOY_DIR)/api-deployment.yaml
 	kubectl apply -f $(DEPLOY_DIR)/api-service.yaml
 	kubectl apply -f $(DEPLOY_DIR)/api-hpa.yaml
+	kubectl apply -f $(DEPLOY_DIR)/pdb-api.yaml
 	kubectl rollout status deployment/task-manager-api --timeout=120s
 
 deploy-worker:
@@ -128,6 +131,7 @@ deploy-worker:
 	kubectl apply -f $(DEPLOY_DIR)/configmap-worker.yaml
 	kubectl apply -f $(DEPLOY_DIR)/worker-deployment.yaml
 	kubectl apply -f $(DEPLOY_DIR)/worker-hpa.yaml 2>/dev/null || echo "KEDA not installed — skipping worker HPA (install KEDA for Kafka-lag autoscaling)"
+	kubectl apply -f $(DEPLOY_DIR)/pdb-worker.yaml
 	kubectl rollout status deployment/task-manager-worker --timeout=120s
 
 deploy-all-scaled: kind-up deploy-pg wait-pg migrate deploy-kafka deploy-pgbouncer deploy-api deploy-worker deploy-prometheus deploy-grafana

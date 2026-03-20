@@ -162,26 +162,8 @@ func (h *Handler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Publish to the queue backend. For PostgreSQL this is a no-op since
-	// the task is already in the table; for Kafka this produces a message.
-	var idemKey string
-	if t.IdempotencyKey != nil {
-		idemKey = *t.IdempotencyKey
-	}
-	if err := h.producer.Enqueue(r.Context(), queue.Message{
-		TaskID:         t.ID,
-		Name:           t.Name,
-		Type:           t.Type,
-		Payload:        t.Payload,
-		Priority:       t.Priority,
-		MaxRetries:     t.MaxRetries,
-		TimeoutSeconds: t.TimeoutSeconds,
-		IdempotencyKey: idemKey,
-	}); err != nil {
-		slog.Error("failed to enqueue task", "error", err, "task_id", t.ID)
-		writeAPIError(w, ErrInternal)
-		return
-	}
+	// The outbox publisher handles Kafka dispatch — the outbox row was
+	// inserted in the same transaction as the task by repo.CreateTask.
 
 	tasksCreatedTotal.WithLabelValues(req.Type).Inc()
 
@@ -234,21 +216,8 @@ func (h *Handler) CreateTaskBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enqueue each task to the queue backend.
-	for i, id := range ids {
-		if err := h.producer.Enqueue(r.Context(), queue.Message{
-			TaskID:         id,
-			Name:           reqs[i].Name,
-			Type:           reqs[i].Type,
-			Payload:        reqs[i].Payload,
-			Priority:       reqs[i].Priority,
-			MaxRetries:     reqs[i].MaxRetries,
-			TimeoutSeconds: reqs[i].TimeoutSeconds,
-			IdempotencyKey: reqs[i].IdempotencyKey,
-		}); err != nil {
-			slog.Error("failed to enqueue task from batch", "error", err, "task_id", id)
-		}
-	}
+	// The outbox publisher handles Kafka dispatch — outbox rows were
+	// inserted in the same transaction by repo.CreateTaskBatch.
 
 	tasksCreatedTotal.WithLabelValues("batch").Add(float64(len(ids)))
 
