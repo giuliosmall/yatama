@@ -182,6 +182,15 @@ func (m *mockRepo) ReapStaleTasks(_ context.Context) (int, int, error) {
 func (m *mockRepo) CreateTaskBatch(_ context.Context, _ []task.CreateTaskRequest) ([]uuid.UUID, error) {
 	panic("not implemented")
 }
+func (m *mockRepo) UpdateTaskStatusOnly(_ context.Context, _ uuid.UUID, _ string) error {
+	panic("not implemented")
+}
+func (m *mockRepo) RequeueTaskOnly(_ context.Context, _ uuid.UUID) error {
+	panic("not implemented")
+}
+func (m *mockRepo) MoveTaskToDLQOnly(_ context.Context, _ uuid.UUID, _ string) error {
+	panic("not implemented")
+}
 
 func TestPostgresConsumer_Consume_ReturnsChannel(t *testing.T) {
 	t.Parallel()

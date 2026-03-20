@@ -51,14 +51,26 @@ type Repository interface {
 	// in task_history, all within one transaction.
 	UpdateTaskStatus(ctx context.Context, id uuid.UUID, status string) error
 
+	// UpdateTaskStatusOnly changes a task's status without inserting a
+	// history row. Use with an external history.Writer for async history.
+	UpdateTaskStatusOnly(ctx context.Context, id uuid.UUID, status string) error
+
 	// RequeueTask sets a task back to "queued", increments retry_count,
 	// and records the transition in task_history, all in one transaction.
 	RequeueTask(ctx context.Context, id uuid.UUID) error
+
+	// RequeueTaskOnly sets a task back to "queued" with exponential backoff
+	// without inserting a history row.
+	RequeueTaskOnly(ctx context.Context, id uuid.UUID) error
 
 	// MoveTaskToDLQ copies a task into the dead_letter_queue table,
 	// updates the task status to "dead_lettered", and inserts a history row,
 	// all within a single transaction.
 	MoveTaskToDLQ(ctx context.Context, id uuid.UUID, errorMessage string) error
+
+	// MoveTaskToDLQOnly copies a task into the dead_letter_queue table and
+	// updates the task status without inserting a history row.
+	MoveTaskToDLQOnly(ctx context.Context, id uuid.UUID, errorMessage string) error
 
 	// ListDLQTasks returns all entries from the dead_letter_queue table,
 	// ordered by dead_lettered_at descending (most recent first).
@@ -197,6 +209,32 @@ func (r *PostgresRepository) CreateTask(ctx context.Context, req CreateTaskReque
 		return nil, fmt.Errorf("CreateTask: insert history: %w", err)
 	}
 
+	// Insert outbox entry for reliable Kafka dispatch.
+	var idemKeyStr string
+	if t.IdempotencyKey != nil {
+		idemKeyStr = *t.IdempotencyKey
+	}
+	outboxPayload, err := json.Marshal(OutboxPayload{
+		TaskID:         t.ID,
+		Name:           t.Name,
+		Type:           t.Type,
+		Payload:        t.Payload,
+		Priority:       t.Priority,
+		MaxRetries:     t.MaxRetries,
+		TimeoutSeconds: t.TimeoutSeconds,
+		IdempotencyKey: idemKeyStr,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("CreateTask: marshal outbox: %w", err)
+	}
+	_, err = tx.Exec(ctx,
+		`INSERT INTO outbox (task_id, payload) VALUES ($1, $2)`,
+		t.ID, outboxPayload,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("CreateTask: insert outbox: %w", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("CreateTask: commit: %w", err)
 	}
@@ -250,14 +288,35 @@ func (r *PostgresRepository) CreateTaskBatch(ctx context.Context, reqs []CreateT
 		ids[i] = id
 	}
 
-	// Batch insert all history rows.
-	for _, id := range ids {
+	// Batch insert all history rows and outbox entries.
+	for i, id := range ids {
 		_, err = tx.Exec(ctx,
 			`INSERT INTO task_history (task_id, status) VALUES ($1, $2)`,
 			id, "queued",
 		)
 		if err != nil {
 			return nil, fmt.Errorf("CreateTaskBatch: insert history: %w", err)
+		}
+
+		outboxPayload, err := json.Marshal(OutboxPayload{
+			TaskID:         id,
+			Name:           reqs[i].Name,
+			Type:           reqs[i].Type,
+			Payload:        reqs[i].Payload,
+			Priority:       reqs[i].Priority,
+			MaxRetries:     reqs[i].MaxRetries,
+			TimeoutSeconds: reqs[i].TimeoutSeconds,
+			IdempotencyKey: reqs[i].IdempotencyKey,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("CreateTaskBatch: marshal outbox[%d]: %w", i, err)
+		}
+		_, err = tx.Exec(ctx,
+			`INSERT INTO outbox (task_id, payload) VALUES ($1, $2)`,
+			id, outboxPayload,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("CreateTaskBatch: insert outbox[%d]: %w", i, err)
 		}
 	}
 
@@ -409,6 +468,21 @@ func (r *PostgresRepository) UpdateTaskStatus(ctx context.Context, id uuid.UUID,
 	return nil
 }
 
+// UpdateTaskStatusOnly changes a task's status without inserting a history row.
+func (r *PostgresRepository) UpdateTaskStatusOnly(ctx context.Context, id uuid.UUID, status string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE tasks SET status = $1, updated_at = now() WHERE id = $2`,
+		status, id,
+	)
+	if err != nil {
+		return fmt.Errorf("UpdateTaskStatusOnly: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTaskNotFound
+	}
+	return nil
+}
+
 // RequeueTask sets a task back to "queued", increments retry_count, and
 // inserts a history row, all within a single transaction.
 func (r *PostgresRepository) RequeueTask(ctx context.Context, id uuid.UUID) error {
@@ -446,6 +520,27 @@ func (r *PostgresRepository) RequeueTask(ctx context.Context, id uuid.UUID) erro
 		return fmt.Errorf("RequeueTask: commit: %w", err)
 	}
 
+	return nil
+}
+
+// RequeueTaskOnly sets a task back to "queued" with exponential backoff
+// without inserting a history row.
+func (r *PostgresRepository) RequeueTaskOnly(ctx context.Context, id uuid.UUID) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE tasks
+		 SET status = 'queued',
+		     retry_count = retry_count + 1,
+		     updated_at = now(),
+		     run_after = now() + LEAST(make_interval(secs => 5 * power(2, retry_count)), interval '5 minutes')
+		 WHERE id = $1`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("RequeueTaskOnly: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTaskNotFound
+	}
 	return nil
 }
 
@@ -605,6 +700,43 @@ func (r *PostgresRepository) MoveTaskToDLQ(ctx context.Context, id uuid.UUID, er
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("MoveTaskToDLQ: commit: %w", err)
+	}
+
+	return nil
+}
+
+// MoveTaskToDLQOnly copies a task into the dead_letter_queue table and updates
+// the task status without inserting a history row.
+func (r *PostgresRepository) MoveTaskToDLQOnly(ctx context.Context, id uuid.UUID, errorMessage string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("MoveTaskToDLQOnly: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	_, err = tx.Exec(ctx,
+		`INSERT INTO dead_letter_queue (original_task_id, name, type, payload, priority, retry_count, max_retries, timeout_seconds, error_message, original_created_at)
+		 SELECT id, name, type, payload, priority, retry_count, max_retries, timeout_seconds, $2, created_at
+		 FROM tasks WHERE id = $1`,
+		id, errorMessage,
+	)
+	if err != nil {
+		return fmt.Errorf("MoveTaskToDLQOnly: insert dlq: %w", err)
+	}
+
+	tag, err := tx.Exec(ctx,
+		`UPDATE tasks SET status = 'dead_lettered', updated_at = now() WHERE id = $1`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("MoveTaskToDLQOnly: update status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTaskNotFound
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("MoveTaskToDLQOnly: commit: %w", err)
 	}
 
 	return nil

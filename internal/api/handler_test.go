@@ -43,6 +43,14 @@ func newMockRepository() *mockRepository {
 	}
 }
 
+func (m *mockRepository) UpdateTaskStatusOnly(_ context.Context, _ uuid.UUID, _ string) error {
+	return nil
+}
+func (m *mockRepository) RequeueTaskOnly(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockRepository) MoveTaskToDLQOnly(_ context.Context, _ uuid.UUID, _ string) error {
+	return nil
+}
+
 func (m *mockRepository) CreateTaskBatch(_ context.Context, reqs []task.CreateTaskRequest) ([]uuid.UUID, error) {
 	ids := make([]uuid.UUID, len(reqs))
 	for i := range reqs {

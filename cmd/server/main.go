@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/giulio/task-manager/internal/api"
+	"github.com/giulio/task-manager/internal/history"
 	"github.com/giulio/task-manager/internal/queue"
 	"github.com/giulio/task-manager/internal/task"
 	"github.com/giulio/task-manager/internal/worker"
@@ -75,8 +76,9 @@ func main() {
 	router := api.NewRouter(handler)
 
 	// Start worker pool.
+	historyWriter := history.NewSyncWriter(pool)
 	reapInterval := time.Duration(reapIntervalSeconds) * time.Second
-	wp := worker.NewPool(consumer, repo, registry, concurrency, reapInterval)
+	wp := worker.NewPool(consumer, repo, registry, historyWriter, concurrency, reapInterval)
 	wp.Start(ctx)
 	slog.Info("worker pool started", "concurrency", concurrency, "reap_interval", reapInterval.String())
 

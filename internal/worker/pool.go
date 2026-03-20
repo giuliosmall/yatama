@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/giulio/task-manager/internal/history"
 	"github.com/giulio/task-manager/internal/queue"
 	"github.com/giulio/task-manager/internal/task"
 )
@@ -58,10 +59,17 @@ var (
 		},
 		[]string{"outcome"},
 	)
+
+	tasksSkippedTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "worker_tasks_skipped_total",
+			Help: "Total number of tasks skipped due to terminal status (idempotency check).",
+		},
+	)
 )
 
 func init() {
-	prometheus.MustRegister(tasksInProgress, taskDurationSeconds, tasksProcessedTotal, dlqTasksDepth, reaperTasksTotal)
+	prometheus.MustRegister(tasksInProgress, taskDurationSeconds, tasksProcessedTotal, dlqTasksDepth, reaperTasksTotal, tasksSkippedTotal)
 }
 
 // DLQDepthDec decrements the DLQ depth gauge. Call this when a task is
@@ -76,25 +84,31 @@ func DLQDepthDec() { dlqTasksDepth.Dec() }
 // tasks, execute them with per-task timeouts, and update their status in the
 // repository. Use NewPool to create a Pool and Start to launch workers.
 type Pool struct {
-	repo         task.Repository
-	consumer     queue.Consumer
-	registry     *task.Registry
-	concurrency  int
-	reapInterval time.Duration
-	wg           sync.WaitGroup
+	repo          task.Repository
+	consumer      queue.Consumer
+	registry      *task.Registry
+	historyWriter history.Writer
+	concurrency   int
+	reapInterval  time.Duration
+	wg            sync.WaitGroup
 }
 
 // NewPool creates a Pool with the given queue consumer, metadata repository,
-// task registry, concurrency level, and reap interval for the stuck-task
-// reaper. The consumer supplies tasks; the repository handles status updates.
-func NewPool(consumer queue.Consumer, repo task.Repository, registry *task.Registry, concurrency int, reapInterval time.Duration) *Pool {
+// task registry, history writer, concurrency level, and reap interval.
+func NewPool(consumer queue.Consumer, repo task.Repository, registry *task.Registry, hw history.Writer, concurrency int, reapInterval time.Duration) *Pool {
 	return &Pool{
-		repo:         repo,
-		consumer:     consumer,
-		registry:     registry,
-		concurrency:  concurrency,
-		reapInterval: reapInterval,
+		repo:          repo,
+		consumer:      consumer,
+		registry:      registry,
+		historyWriter: hw,
+		concurrency:   concurrency,
+		reapInterval:  reapInterval,
 	}
+}
+
+// isTerminal reports whether a task status is a final state.
+func isTerminal(status string) bool {
+	return status == "succeeded" || status == "failed" || status == "dead_lettered"
 }
 
 // Start launches p.concurrency worker goroutines that consume from the queue,
@@ -173,8 +187,22 @@ func (p *Pool) run(ctx context.Context, workerID int, deliveries <-chan queue.De
 	}
 }
 
-// executeDelivery converts a queue.Delivery into a task.Task and executes it.
+// executeDelivery checks for duplicate delivery, converts a queue.Delivery
+// into a task.Task, and executes it.
 func (p *Pool) executeDelivery(ctx context.Context, d queue.Delivery, workerID int) {
+	// Idempotency check: skip if already in a terminal state.
+	existing, err := p.repo.GetTask(ctx, d.Message.TaskID)
+	if err == nil && isTerminal(existing.Status) {
+		slog.Debug("skipping terminal task",
+			"task_id", d.Message.TaskID,
+			"status", existing.Status,
+			"worker_id", workerID,
+		)
+		tasksSkippedTotal.Inc()
+		_ = d.Ack()
+		return
+	}
+
 	t := &task.Task{
 		ID:             d.Message.TaskID,
 		Name:           d.Message.Name,
@@ -245,9 +273,10 @@ func (p *Pool) execute(ctx context.Context, t *task.Task, workerID int) {
 	fn, ok := p.registry.Get(t.Type)
 	if !ok {
 		slog.Error("unknown task type", "task_id", t.ID, "type", t.Type, "worker_id", workerID)
-		if err := p.repo.UpdateTaskStatus(ctx, t.ID, "failed"); err != nil {
+		if err := p.repo.UpdateTaskStatusOnly(ctx, t.ID, "failed"); err != nil {
 			slog.Error("failed to update status for unknown type", "task_id", t.ID, "error", err, "worker_id", workerID)
 		}
+		_ = p.historyWriter.Write(ctx, history.Event{TaskID: t.ID, Status: "failed", At: time.Now()})
 		return
 	}
 
@@ -280,9 +309,13 @@ func (p *Pool) handleSuccess(ctx context.Context, t *task.Task, workerID int, du
 	taskDurationSeconds.WithLabelValues(t.Type, status).Observe(duration.Seconds())
 	tasksProcessedTotal.WithLabelValues(t.Type, status).Inc()
 
-	if err := p.repo.UpdateTaskStatus(ctx, t.ID, status); err != nil {
+	if err := p.repo.UpdateTaskStatusOnly(ctx, t.ID, status); err != nil {
 		slog.Error("failed to update task status to completed", "task_id", t.ID, "error", err, "worker_id", workerID)
 		return
+	}
+
+	if err := p.historyWriter.Write(ctx, history.Event{TaskID: t.ID, Status: status, At: time.Now()}); err != nil {
+		slog.Error("failed to write history event", "task_id", t.ID, "error", err, "worker_id", workerID)
 	}
 
 	slog.Info("task succeeded", "task_id", t.ID, "type", t.Type, "duration", duration.String(), "worker_id", workerID)
@@ -295,9 +328,13 @@ func (p *Pool) handleFailure(ctx context.Context, t *task.Task, workerID int, ta
 		taskDurationSeconds.WithLabelValues(t.Type, "retry").Observe(duration.Seconds())
 		tasksProcessedTotal.WithLabelValues(t.Type, "retry").Inc()
 
-		if err := p.repo.RequeueTask(ctx, t.ID); err != nil {
+		if err := p.repo.RequeueTaskOnly(ctx, t.ID); err != nil {
 			slog.Error("failed to requeue task", "task_id", t.ID, "error", err, "worker_id", workerID)
 			return
+		}
+
+		if err := p.historyWriter.Write(ctx, history.Event{TaskID: t.ID, Status: "queued", At: time.Now()}); err != nil {
+			slog.Error("failed to write history event", "task_id", t.ID, "error", err, "worker_id", workerID)
 		}
 
 		slog.Info("task requeued",
@@ -317,9 +354,13 @@ func (p *Pool) handleFailure(ctx context.Context, t *task.Task, workerID int, ta
 	tasksProcessedTotal.WithLabelValues(t.Type, status).Inc()
 	dlqTasksDepth.Inc()
 
-	if err := p.repo.MoveTaskToDLQ(ctx, t.ID, taskErr.Error()); err != nil {
+	if err := p.repo.MoveTaskToDLQOnly(ctx, t.ID, taskErr.Error()); err != nil {
 		slog.Error("failed to move task to DLQ", "task_id", t.ID, "error", err, "worker_id", workerID)
 		return
+	}
+
+	if err := p.historyWriter.Write(ctx, history.Event{TaskID: t.ID, Status: status, At: time.Now()}); err != nil {
+		slog.Error("failed to write history event", "task_id", t.ID, "error", err, "worker_id", workerID)
 	}
 
 	slog.Error("task dead-lettered",

@@ -48,6 +48,19 @@ type DeadLetterTask struct {
 	DeadLetteredAt    time.Time         `json:"dead_lettered_at"`
 }
 
+// OutboxPayload is the JSON structure written to the outbox table. It mirrors
+// queue.Message to avoid a circular import between task and queue packages.
+type OutboxPayload struct {
+	TaskID         uuid.UUID         `json:"task_id"`
+	Name           string            `json:"name"`
+	Type           string            `json:"type"`
+	Payload        map[string]string `json:"payload"`
+	Priority       int               `json:"priority"`
+	MaxRetries     int               `json:"max_retries"`
+	TimeoutSeconds int               `json:"timeout_seconds"`
+	IdempotencyKey string            `json:"idempotency_key,omitempty"`
+}
+
 // CreateTaskRequest carries the parameters needed to enqueue a new task.
 type CreateTaskRequest struct {
 	Name           string            `json:"name"`

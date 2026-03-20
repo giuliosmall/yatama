@@ -131,7 +131,7 @@ func main() {
 	defer historyWriter.Close()
 
 	reapInterval := time.Duration(reapIntervalSeconds) * time.Second
-	wp := worker.NewPool(consumer, repo, registry, concurrency, reapInterval)
+	wp := worker.NewPool(consumer, repo, registry, historyWriter, concurrency, reapInterval)
 	wp.Start(ctx)
 	slog.Info("worker pool started",
 		"concurrency", concurrency,
@@ -140,11 +140,8 @@ func main() {
 		"history_mode", historyMode,
 	)
 
-	// Suppress unused variable — historyWriter is wired but the worker pool
-	// doesn't consume it yet (pool.go still uses repo.UpdateTaskStatus which
-	// inserts history synchronously). The next step is to have the pool call
-	// historyWriter.Write() instead. For now, it's initialized and ready.
-	_ = historyWriter
+	// Flush history writer during shutdown (after worker pool stops).
+	defer historyWriter.Close()
 
 	// Metrics and health endpoint.
 	mux := http.NewServeMux()
