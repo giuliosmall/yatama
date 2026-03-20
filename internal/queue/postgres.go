@@ -22,6 +22,7 @@ func NewPostgresProducer() *PostgresProducer {
 }
 
 func (p *PostgresProducer) Enqueue(_ context.Context, _ Message) error { return nil }
+func (p *PostgresProducer) Flush(_ context.Context) error              { return nil }
 func (p *PostgresProducer) Close() error                               { return nil }
 
 // PostgresConsumer implements Consumer by polling Repository.ClaimTask.

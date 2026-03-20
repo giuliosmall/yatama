@@ -54,8 +54,9 @@ func NewKafkaProducer(cfg KafkaConfig) (*KafkaProducer, error) {
 	}, nil
 }
 
-// Enqueue publishes a task message to Kafka. The message key is the task type,
-// which ensures all tasks of the same type land on the same partition.
+// Enqueue publishes a task message to Kafka asynchronously. The message key
+// is the task type for partition affinity. Returns nil immediately; errors
+// are logged and counted via Prometheus in the async callback.
 func (p *KafkaProducer) Enqueue(ctx context.Context, msg Message) error {
 	value, err := p.serializer.Marshal(msg)
 	if err != nil {
@@ -72,18 +73,16 @@ func (p *KafkaProducer) Enqueue(ctx context.Context, msg Message) error {
 		},
 	}
 
-	results := p.client.ProduceSync(ctx, record)
-	if err := results.FirstErr(); err != nil {
-		return fmt.Errorf("kafka enqueue: produce: %w", err)
-	}
+	p.client.Produce(ctx, record, func(_ *kgo.Record, err error) {
+		if err != nil {
+			slog.Error("kafka async produce failed",
+				"task_id", msg.TaskID,
+				"type", msg.Type,
+				"error", err,
+			)
+		}
+	})
 
-	slog.Debug("kafka message produced",
-		"topic", p.topic,
-		"task_id", msg.TaskID,
-		"type", msg.Type,
-		"partition", results[0].Record.Partition,
-		"offset", results[0].Record.Offset,
-	)
 	return nil
 }
 
@@ -108,14 +107,26 @@ func (p *KafkaProducer) EnqueueDLQ(ctx context.Context, msg Message, taskErr str
 		},
 	}
 
-	results := p.client.ProduceSync(ctx, record)
-	if err := results.FirstErr(); err != nil {
-		return fmt.Errorf("kafka enqueue dlq: produce: %w", err)
+	p.client.Produce(ctx, record, func(_ *kgo.Record, err error) {
+		if err != nil {
+			slog.Error("kafka async dlq produce failed", "task_id", msg.TaskID, "error", err)
+		}
+	})
+	return nil
+}
+
+// Flush blocks until all buffered records have been produced and acknowledged.
+func (p *KafkaProducer) Flush(ctx context.Context) error {
+	if err := p.client.Flush(ctx); err != nil {
+		return fmt.Errorf("kafka producer flush: %w", err)
 	}
 	return nil
 }
 
 func (p *KafkaProducer) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = p.Flush(ctx)
 	p.client.Close()
 	return nil
 }

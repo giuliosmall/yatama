@@ -36,6 +36,7 @@ type Delivery struct {
 // Producer publishes tasks to the queue. Used by API pods.
 type Producer interface {
 	Enqueue(ctx context.Context, msg Message) error
+	Flush(ctx context.Context) error
 	Close() error
 }
 
