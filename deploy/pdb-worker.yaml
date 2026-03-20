@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: task-manager-worker-pdb
+  labels:
+    app: task-manager
+    component: worker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: task-manager
+      component: worker
