@@ -29,7 +29,7 @@ data:
     ; Pool sizing: 100 server connections per PgBouncer instance.
     ; With a single PgBouncer pod this gives 100 connections to PostgreSQL
     ; while accepting up to 2000 client connections from all API + worker pods.
-    default_pool_size = 200
+    default_pool_size = 125
     max_client_conn = 10000
     reserve_pool_size = 50
 
@@ -62,7 +62,7 @@ metadata:
     app: task-manager
     component: pgbouncer
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: task-manager
@@ -86,7 +86,7 @@ spec:
             - name: POOL_MODE
               value: "transaction"
             - name: DEFAULT_POOL_SIZE
-              value: "200"
+              value: "125"
             - name: MAX_CLIENT_CONN
               value: "10000"
             - name: RESERVE_POOL_SIZE
