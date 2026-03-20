@@ -338,3 +338,17 @@ func TestTaskToMessage_NilIdempotencyKey(t *testing.T) {
 		t.Errorf("IdempotencyKey: got %q, want empty string for nil key", msg.IdempotencyKey)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// PostgresProducer — Flush
+// ---------------------------------------------------------------------------
+
+func TestPostgresProducer_Flush_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	p := NewPostgresProducer()
+	err := p.Flush(context.Background())
+	if err != nil {
+		t.Fatalf("Flush: expected nil, got %v", err)
+	}
+}

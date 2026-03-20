@@ -36,3 +36,33 @@ func TestWaitWithTimeout_TimesOut(t *testing.T) {
 	// Clean up so the test doesn't leak.
 	p.wg.Done()
 }
+
+// ---------------------------------------------------------------------------
+// isTerminal
+// ---------------------------------------------------------------------------
+
+func TestIsTerminal(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		status string
+		want   bool
+	}{
+		{"succeeded", true},
+		{"failed", true},
+		{"dead_lettered", true},
+		{"queued", false},
+		{"running", false},
+		{"", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.status, func(t *testing.T) {
+			t.Parallel()
+			got := isTerminal(tc.status)
+			if got != tc.want {
+				t.Errorf("isTerminal(%q) = %v, want %v", tc.status, got, tc.want)
+			}
+		})
+	}
+}
